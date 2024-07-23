@@ -59,45 +59,49 @@ emotions = ['anger', 'happy', 'sad', 'neutral']
 label_encoder.fit(emotions)
 
 # Streamlit UI
-st.title("Deteksi Emosi Siswa")
+st.title("Sistem Deteksi Emosi Siswa")
 
-# Upload video
-uploaded_video = st.file_uploader("Upload a video", type=["mp4", "avi", "mov"])
+# Tabs
+tab1, tab2, tab3 = st.tabs(["Upload Video", "Preview Frame", "Export Data"])
 
-# Pilih video default jika tidak ada video yang diupload
-if uploaded_video is None:
-    default_video_path = 'default_video.mp4'  # Ganti dengan path video default Anda
-    if os.path.exists(default_video_path):
-        uploaded_video = open(default_video_path, 'rb')
-    else:
-        st.stop()
+# Tab 1: Upload Video
+with tab1:
+    uploaded_video = st.file_uploader("Upload a video", type=["mp4", "avi", "mov"])
 
-# Save uploaded video to a temporary file
-with open("temp_video.mp4", "wb") as f:
-    f.write(uploaded_video.read())
+    # Pilih video default jika tidak ada video yang diupload
+    if uploaded_video is None:
+        default_video_path = 'default_video.mp4'  # Ganti dengan path video default Anda
+        if os.path.exists(default_video_path):
+            uploaded_video = open(default_video_path, 'rb')
+        else:
+            st.stop()
 
-# Extract frames from the video
-video_capture = cv2.VideoCapture("temp_video.mp4")
-fps = video_capture.get(cv2.CAP_PROP_FPS)
-frame_count = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
-duration = frame_count / fps
+    # Save uploaded video to a temporary file
+    with open("temp_video.mp4", "wb") as f:
+        f.write(uploaded_video.read())
 
-frame_rate = 10  # Extract 10 frames per second
-frame_interval = int(fps / frame_rate)
+    # Extract frames from the video
+    video_capture = cv2.VideoCapture("temp_video.mp4")
+    fps = video_capture.get(cv2.CAP_PROP_FPS)
+    frame_count = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
+    duration = frame_count / fps
 
-frames = []
-frame_times = []
-count = 0
-while video_capture.isOpened():
-    ret, frame = video_capture.read()
-    if not ret:
-        break
-    if count % frame_interval == 0:
-        frames.append(frame)
-        frame_times.append(count / fps)
-    count += 1
+    frame_rate = 10  # Extract 10 frames per second
+    frame_interval = int(fps / frame_rate)
 
-video_capture.release()
+    frames = []
+    frame_times = []
+    count = 0
+    while video_capture.isOpened():
+        ret, frame = video_capture.read()
+        if not ret:
+            break
+        if count % frame_interval == 0:
+            frames.append(frame)
+            frame_times.append(count / fps)
+        count += 1
+
+    video_capture.release()
 
 # Initialize detection results
 detection_results = []
@@ -107,84 +111,80 @@ video_name = uploaded_video.name.split('.')[0]
 folder_name = f"{video_name}_frames"
 os.makedirs(folder_name, exist_ok=True)
 
-st.divider()
+# Tab 2: Preview Frame
+with tab2:
+    # Display extracted frames section title and download button
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.markdown("### Frame Video Extract")
+        # Add real-time frame counter
+        frame_counter_placeholder = st.empty()
+    with col2:
+        # Create a ZIP file containing all frames in memory
+        zip_buffer = BytesIO()
+        with ZipFile(zip_buffer, 'w') as zip:
+            for i in range(len(frames)):
+                frame_path = f"{folder_name}/detected_frame_{i+1}.jpg"
+                if os.path.exists(frame_path):
+                    zip.write(frame_path, arcname=f"detected_frame_{i+1}.jpg")
+        zip_buffer.seek(0)
 
-# Display extracted frames section title and download button
-col1, col2 = st.columns([3, 1])
-with col1:
-    st.markdown("### Frame Video Extract")
-    # Add real-time frame counter
-    frame_counter_placeholder = st.empty()
-with col2:
-    # Create a ZIP file containing all frames in memory
-    zip_buffer = BytesIO()
-    with ZipFile(zip_buffer, 'w') as zip:
-        for i in range(len(frames)):
-            frame_path = f"{folder_name}/detected_frame_{i+1}.jpg"
-            if os.path.exists(frame_path):
-                zip.write(frame_path, arcname=f"detected_frame_{i+1}.jpg")
-    zip_buffer.seek(0)
+        # Display the download button for the ZIP file
+        st.download_button(
+            label="Download Zip Frame",
+            data=zip_buffer,
+            file_name=f"{folder_name}.zip",
+            mime="application/zip"
+        )
 
-    # Display the download button for the ZIP file
-    st.download_button(
-        label="Download Zip Frame",
-        data=zip_buffer,
-        file_name=f"{folder_name}.zip",
-        mime="application/zip"
-    )
+    # Process frames and display them in a grid with scrollable and expander
+    cols_per_row = 10
+    with st.expander("View Frames"):
+        container = st.container(height=350)
+        for idx, frame in enumerate(frames, start=1):
+            start_time = datetime.now()
+            img_with_detections, detected_faces = detect_and_predict_emotion(frame)
+            end_time = datetime.now()
+            detection_time = (end_time - start_time).total_seconds()
+            
+            # Update the frame counter
+            frame_counter_placeholder.text(f"Processing frame {idx}/{len(frames)}")
+            
+            # Count emotions
+            emotion_counts = {emotion: 0 for emotion in emotions}
+            for (_, _, _, _, emotion) in detected_faces:
+                emotion_counts[emotion] += 1
+            
+            total_emotions = sum(emotion_counts.values())
+            
+            emotion_percentages = {f'{emotion} (%)': (count / total_emotions * 100 if total_emotions > 0 else 0) for emotion, count in emotion_counts.items()}
+            
+            detection_results.append({
+                'Frame': str(idx),  # Ubah tipe data Frame menjadi string
+                'Time (s)': frame_times[idx-1],
+                'Detection Time (s)': detection_time,
+                'N': total_emotions,
+                **emotion_counts,
+                **emotion_percentages
+            })
 
-# Process frames and display them in a grid with scrollable and expander
-cols_per_row = 10
-with st.expander("View Frames"):
-    container = st.container(height=350)
-    for idx, frame in enumerate(frames, start=1):
-        start_time = datetime.now()
-        img_with_detections, detected_faces = detect_and_predict_emotion(frame)
-        end_time = datetime.now()
-        detection_time = (end_time - start_time).total_seconds()
-        
-        # Update the frame counter
-        frame_counter_placeholder.text(f"Processing frame {idx}/{len(frames)}")
-        
-        # Count emotions
-        emotion_counts = {emotion: 0 for emotion in emotions}
-        for (_, _, _, _, emotion) in detected_faces:
-            emotion_counts[emotion] += 1
-        
-        total_emotions = sum(emotion_counts.values())
-        
-        emotion_percentages = {f'{emotion} (%)': (count / total_emotions * 100 if total_emotions > 0 else 0) for emotion, count in emotion_counts.items()}
-        
-        detection_results.append({
-            'Frame': str(idx),  # Ubah tipe data Frame menjadi string
-            'Time (s)': frame_times[idx-1],
-            'Detection Time (s)': detection_time,
-            'N': total_emotions,
-            **emotion_counts,
-            **emotion_percentages
-        })
+            # Save detected frame with annotations directly to the folder
+            normalized_filename = f"{folder_name}/detected_frame_{idx}.jpg"
+            cv2.imwrite(normalized_filename, img_with_detections)
 
-        # Save detected frame with annotations directly to the folder
-        normalized_filename = f"{folder_name}/detected_frame_{idx}.jpg"
-        cv2.imwrite(normalized_filename, img_with_detections)
+            # Resize the frame for display in Streamlit
+            resized_img_with_detections = cv2.resize(img_with_detections, (150, 100))
 
-        # Resize the frame for display in Streamlit
-        resized_img_with_detections = cv2.resize(img_with_detections, (150, 100))
-
-        # Display the image in the correct column
-        if (idx - 1) % cols_per_row == 0:
-            cols = container.columns(cols_per_row)
-        
-        col_idx = (idx - 1) % cols_per_row
-        with cols[col_idx]:
-            st.image(cv2.cvtColor(resized_img_with_detections, cv2.COLOR_BGR2RGB), caption=f"Frame {idx}", use_column_width=True)
+            # Display the image in the correct column
+            if (idx - 1) % cols_per_row == 0:
+                cols = container.columns(cols_per_row)
+            
+            col_idx = (idx - 1) % cols_per_row
+            with cols[col_idx]:
+                st.image(cv2.cvtColor(resized_img_with_detections, cv2.COLOR_BGR2RGB), caption=f"Frame {idx}", use_column_width=True)
 
 # Create a DataFrame from detection results
 df_results = pd.DataFrame(detection_results)
-
-# Display DataFrame for debugging purposes
-#st.write("Debugging: Display DataFrame")
-#st.write(df_results)
 
 # Fill any NaN or empty strings with 0
 df_results.fillna(0, inplace=True)
@@ -200,64 +200,80 @@ totals.update(totals_percentages)
 totals_df = pd.DataFrame([totals])
 df_results = pd.concat([df_results, totals_df], ignore_index=True)
 
-st.divider()
-
-# Apply custom CSS to limit the width of the table
-st.markdown(
-    """
-    <style>
-    .dataframe-container {
-        width: 700px;  /* Adjust the width as needed */
-        margin: 0 auto;
-    }
-    .download-button {
-        text-align: right;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-# Display the dataframe with emotion counts and download button
-col1, col2 = st.columns([4, 1])  # Adjusted column widths to make col1 wider
-with col1:
-    st.markdown("### Emotion Counts Data")
-    st.markdown('<div class="dataframe-container">', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-with col2:
-    # Download button for the emotion counts data as CSV
-    csv = df_results.to_csv(index=False).encode('utf-8')
-    st.markdown('<div class="download-button">', unsafe_allow_html=True)
-    st.download_button(
-        label="Download CSV",
-        data=csv,
-        file_name=f"{video_name}_emotion_counts.csv",
-        mime="text/csv"
+# Tab 3: Export Data
+with tab3:
+    # Apply custom CSS to limit the width of the table
+    st.markdown(
+        """
+        <style>
+        .dataframe-container {
+            width: 700px;  /* Adjust the width as needed */
+            margin: 0 auto;
+        }
+        .download-button {
+            text-align: right;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
-    st.markdown('</div>', unsafe_allow_html=True)
-st.write(df_results)  # Use st.write to display the DataFrame
+
+    # Display the dataframe with emotion counts and download button
+    col1, col2 = st.columns([4, 1])  # Adjusted column widths to make col1 wider
+    with col1:
+        st.markdown("### Emotion Counts Data")
+        st.markdown('<div class="dataframe-container">', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with col2:
+        # Download button for the emotion counts data as CSV
+        csv = df_results.to_csv(index=False).encode('utf-8')
+        st.markdown('<div class="download-button">', unsafe_allow_html=True)
+        st.download_button(
+            label="Download CSV",
+            data=csv,
+            file_name=f"{video_name}_emotion_counts.csv",
+            mime="text/csv"
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.write(df_results)  # Use st.write to display the DataFrame
+
+    st.markdown("<h1 style='text-align: center; color: white; font-size: 24px;'>Emotion Distribution Across All Frames</h1>", unsafe_allow_html=True)
+
+    # Plot pie chart
+    pie_colors = ['#F7464A', '#33CF49', '#4684F7', '#F7B246']
+    plt.figure(figsize=(6, 6))  # Adjust figure size as needed
+    plt.pie(df_results[emotions].sum(), labels=emotions, autopct='%1.1f%%', startangle=140, colors=pie_colors, textprops={'color': 'white'}, wedgeprops={'edgecolor': 'black'})
+
+    # Create columns for layout
+    col1, col2 = st.columns([3, 2])  # Adjust column widths as needed
+
+    # Display pie chart in the right column
+    with col1:
+        st.pyplot(plt, transparent=True)
+
+    # Display explanation in the left column
+    with col2:
+        st.write("Explanation of Pie Chart Colors")
+        st.markdown("""
+        <span style="color: #F7464A;">&#9679;</span> **Anger**<br>
+        <span style="color: #33CF49;">&#9679;</span> **Happy**<br>
+        <span style="color: #4684F7;">&#9679;</span> **Sad**<br>
+        <span style="color: #F7B246;">&#9679;</span> **Neutral**<br>
+        """, unsafe_allow_html=True)
+        
+    st.title("Hasil Deteksi")
+
+    # Calculate percentages
+    emotion_sums = df_results[emotions].sum()
+    total_counts = emotion_sums.sum()
+    percentages = {emotion: (count / total_counts) * 100 for emotion, count in emotion_sums.items()}
     
-st.divider()
-st.markdown("<h1 style='text-align: center; color: white; font-size: 24px;'>Emotion Distribution Across All Frames</h1>", unsafe_allow_html=True)
+    # Sort percentages
+    sorted_percentages = sorted(percentages.items(), key=lambda x: x[1], reverse=True)
 
-# Plot pie chart
-pie_colors = ['#F7464A', '#33CF49', '#4684F7', '#F7B246']
-plt.figure(figsize=(6, 6))  # Adjust figure size as needed
-plt.pie(df_results[emotions].sum(), labels=emotions, autopct='%1.1f%%', startangle=140, colors=pie_colors, textprops={'color': 'white'}, wedgeprops={'edgecolor': 'black'})
+    # Create the markdown string
+    markdown_str = ', '.join([f"{value:.1f}% {key}" for key, value in sorted_percentages])
 
-# Create columns for layout
-col1, col2 = st.columns([3, 2])  # Adjust column widths as needed
-
-# Display pie chart in the right column
-with col1:
-    st.pyplot(plt, transparent=True)
-
-# Display explanation in the left column
-with col2:
-    st.write("Explanation of Pie Chart Colors")
-    st.markdown("""
-    <span style="color: #F7464A;">&#9679;</span> **Anger**<br>
-    <span style="color: #33CF49;">&#9679;</span> **Happy**<br>
-    <span style="color: #4684F7;">&#9679;</span> **Sad**<br>
-    <span style="color: #F7B246;">&#9679;</span> **Neutral**<br>
-    """, unsafe_allow_html=True)
+    # Display the markdown string
+    with st.container(height = 5):
+        st.markdown(markdown_str)
