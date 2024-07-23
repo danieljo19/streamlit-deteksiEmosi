@@ -1,7 +1,8 @@
 streamlit==1.12.0
-opencv-python-headless==4.5.5.64  # gunakan opencv-python-headless untuk deployment server tanpa GUI
+opencv-python-headless==4.5.5.64
 scikit-image==0.19.2
 scikit-learn==1.0.2
 joblib==1.1.0
 matplotlib==3.5.1
 pandas==1.4.2
+Cython==0.29.30
