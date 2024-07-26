@@ -12,6 +12,10 @@ from zipfile import ZipFile
 from io import BytesIO
 from datetime import datetime
 
+st.set_page_config(
+        page_title="DETEKSI EMOSI SISWA",
+)
+
 # Parameter HOG
 pixels_per_cell = (16, 16)
 cells_per_block = (2, 2)
@@ -70,15 +74,21 @@ with tab1:
 
     # Pilih video default jika tidak ada video yang diupload
     if uploaded_video is None:
-        default_video_path = 'default_video.mp4'  # Ganti dengan path video default Anda
+        default_video_path = 'VID_20240724_104550.mp4'  # Ganti dengan path video default Anda
         if os.path.exists(default_video_path):
             uploaded_video = open(default_video_path, 'rb')
+            default_file_name = os.path.basename(default_video_path)
         else:
             st.stop()
+    else:
+        default_file_name = uploaded_video.name
 
     # Save uploaded video to a temporary file
     with open("temp_video.mp4", "wb") as f:
         f.write(uploaded_video.read())
+
+    # Display the name of the uploaded or default video
+    st.write(f"File: {default_file_name}")
 
     # Extract frames from the video
     video_capture = cv2.VideoCapture("temp_video.mp4")
@@ -107,7 +117,7 @@ with tab1:
 detection_results = []
 
 # Folder to save frames
-video_name = uploaded_video.name.split('.')[0]
+video_name = default_file_name.split('.')[0]
 folder_name = f"{video_name}_frames"
 os.makedirs(folder_name, exist_ok=True)
 
@@ -275,5 +285,5 @@ with tab3:
     markdown_str = ', '.join([f"{value:.1f}% {key}" for key, value in sorted_percentages])
 
     # Display the markdown string
-    with st.container(height = 5):
+    with st.container():
         st.markdown(markdown_str)
